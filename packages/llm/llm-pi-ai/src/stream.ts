@@ -48,6 +48,17 @@ function classifyPiAiError(message: string): string {
   if (/\b413\b|failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return 'INVALID_REQUEST'
   if (/\b400\b|invalid.?request/i.test(message)) return 'INVALID_REQUEST'
   if (/\b5\d\d\b/.test(message)) return 'SERVER'
+  // Provider capacity wording delivered without an HTTP status. A mid-stream SSE
+  // error frame carries only `error.message`, and a local subscription proxy may
+  // forward exactly that text, so the ChatGPT/Codex backend's load message
+  // ("Our servers are currently overloaded. Please try again later.") used to
+  // fall through to PI_AI_ERROR and never reach the retry executor. These are
+  // transient server conditions: quota exhaustion and rate limits were already
+  // classified above, so retrying with backoff is safe.
+  if (/servers? (?:are|is) (?:currently )?overloaded|currently overloaded|server is busy|temporarily unavailable|service unavailable/i.test(message)) return 'SERVER'
+  // A model the route does not serve is permanent: resending cannot fix it, so
+  // it must never be retried as a transient server failure.
+  if (/\bmodel\b[^.]*\b(?:not (?:found|supported)|unknown|does not support)\b/i.test(message)) return 'INVALID_REQUEST'
   if (/\btime(?:d)?\s*out\b|timeout/i.test(message)) return 'TIMEOUT'
   // A stream truncated before the provider's terminal event: each pi-ai provider
   // throws its own wording when the wire closes mid-response without a terminal

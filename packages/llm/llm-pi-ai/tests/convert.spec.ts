@@ -938,6 +938,25 @@ describe('mapStopReason / mapUsage', () => {
     }))).toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
   })
 
+  it('classifies provider capacity wording without an HTTP status as transient', () => {
+    // A mid-stream SSE error frame carries only `error.message`; a subscription
+    // proxy forwarding the ChatGPT/Codex backend's load message used to surface
+    // this as PI_AI_ERROR, which the retry executor never retries.
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: 'Our servers are currently overloaded. Please try again later.',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'SERVER' } })
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: 'The server is busy, please try again later',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'SERVER' } })
+    // An unsupported model is permanent and must stay non-retryable.
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: "The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account.",
+    }))).toMatchObject({ kind: 'error', failure: { code: 'INVALID_REQUEST' } })
+  })
+
   it.each([
     'other side closed',
     'HTTP2 request did not get a response',
